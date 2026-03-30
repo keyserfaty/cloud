@@ -16,10 +16,10 @@ import type {
 import type { CloudAgentSession } from '../persistence/CloudAgentSession.js';
 import type { ExecutionPlan, ExecutionResult } from './types.js';
 import { ExecutionError } from './errors.js';
-import { SessionService, type PreparedSession } from '../session-service.js';
+import { SessionService, determineBranchName, type PreparedSession } from '../session-service.js';
 import { logger } from '../logger.js';
-import { updateGitRemoteToken } from '../workspace.js';
-import { WrapperClient } from '../kilo/wrapper-client.js';
+import { updateGitRemoteToken, buildGitCloneUrl } from '../workspace.js';
+import { WrapperClient, type SupervisorInitPayload } from '../kilo/wrapper-client.js';
 import { withDORetry } from '../utils/do-retry.js';
 import { normalizeAgentMode } from '../schema.js';
 
@@ -92,6 +92,13 @@ export class ExecutionOrchestrator {
         error
       );
     }
+
+    // Per-session sandbox: supervisor mode
+    if (sandboxId.startsWith('ses-')) {
+      return this.executeSupervisor(sandbox, plan);
+    }
+
+    // Shared sandbox: existing path (unchanged)
 
     // 2. Workspace preparation (may throw WORKSPACE_SETUP_FAILED)
     const prepared = await this.prepareWorkspace(sandbox, plan, options?.onProgress);
@@ -170,6 +177,179 @@ export class ExecutionOrchestrator {
 
     logger.info('ExecutionOrchestrator execution started successfully');
     return { kiloSessionId };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Supervisor Mode
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Execute a prompt using supervisor mode (per-session sandboxes).
+   * The supervisor wrapper runs at boot (container CMD) on port 5000.
+   * Workspace setup + kilo startup happen inside the container via /job/init.
+   */
+  private async executeSupervisor(
+    sandbox: SandboxInstance,
+    plan: ExecutionPlan
+  ): Promise<ExecutionResult> {
+    const { executionId, sessionId, userId, prompt, mode, workspace, wrapper } = plan;
+
+    // Create a session on the sandbox for exec operations (curl)
+    const session = await sandbox.createSession();
+
+    // Create supervisor-mode client (fixed port 5000)
+    const wrapperClient = WrapperClient.forSupervisor(session);
+
+    // Wait for the supervisor wrapper HTTP server to be ready
+    try {
+      await wrapperClient.waitForHealthy();
+    } catch (error) {
+      throw ExecutionError.wrapperStartFailed(
+        `Supervisor wrapper not healthy: ${error instanceof Error ? error.message : String(error)}`,
+        error
+      );
+    }
+
+    let kiloSessionId: string;
+
+    if (workspace.shouldPrepare) {
+      // First turn: build init payload and send /job/init
+      const initPayload = this.buildSupervisorInitPayload(plan);
+
+      try {
+        const initResponse = await wrapperClient.init(initPayload);
+        if (initResponse.status !== 'ready' || !initResponse.kiloSessionId) {
+          throw new Error(
+            `Init failed at step ${initResponse.step ?? 'unknown'}: ${initResponse.message ?? 'unknown error'}`
+          );
+        }
+        kiloSessionId = initResponse.kiloSessionId;
+        logger.withFields({ kiloSessionId }).info('Supervisor init complete');
+      } catch (error) {
+        if (error instanceof ExecutionError) throw error;
+        throw ExecutionError.workspaceSetupFailed(
+          `Supervisor init failed: ${error instanceof Error ? error.message : String(error)}`,
+          error
+        );
+      }
+    } else {
+      // Resume: supervisor already initialized, reuse existing kiloSessionId
+      const existingId = wrapper.kiloSessionId ?? workspace.existingMetadata?.kiloSessionId;
+      if (!existingId) {
+        throw ExecutionError.invalidRequest(
+          'Cannot resume supervisor session: no kiloSessionId found in wrapper or existing metadata'
+        );
+      }
+      kiloSessionId = existingId;
+      logger
+        .withFields({ kiloSessionId })
+        .info('Supervisor resume, reusing existing kiloSessionId');
+    }
+
+    // Record activity for idle timeout tracking
+    try {
+      await withDORetry(
+        () => this.deps.getSessionStub(userId, sessionId),
+        stub => stub.recordKiloServerActivity(),
+        'recordKiloServerActivity'
+      );
+    } catch {
+      logger.warn('Failed to record kilo server activity');
+    }
+
+    // Send prompt with execution binding
+    const ingestUrl = this.deps.getIngestUrl(sessionId, userId);
+    const ingestToken = executionId;
+    const kilocodeToken = this.getKilocodeToken(plan);
+
+    const execution = {
+      executionId,
+      ingestUrl,
+      ingestToken,
+      workerAuthToken: kilocodeToken,
+      upstreamBranch: workspace.shouldPrepare
+        ? workspace.initContext?.upstreamBranch
+        : workspace.existingMetadata?.upstreamBranch,
+    };
+
+    const normalizedMode = normalizeAgentMode(mode);
+    try {
+      const result = await wrapperClient.prompt({
+        prompt,
+        model: wrapper.model,
+        variant: wrapper.variant,
+        agent: normalizedMode,
+        autoCommit: wrapper.autoCommit,
+        condenseOnComplete: wrapper.condenseOnComplete,
+        execution,
+      });
+      logger.withFields({ inflightId: result.messageId }).info('Prompt sent to supervisor wrapper');
+    } catch (error) {
+      throw ExecutionError.wrapperStartFailed(
+        `Failed to send prompt to supervisor: ${error instanceof Error ? error.message : String(error)}`,
+        error
+      );
+    }
+
+    logger.info('Supervisor execution started successfully');
+    return { kiloSessionId };
+  }
+
+  /**
+   * Build the init payload for supervisor mode from the execution plan.
+   */
+  private buildSupervisorInitPayload(plan: ExecutionPlan): SupervisorInitPayload {
+    const { sessionId, userId, workspace, wrapper } = plan;
+
+    if (!workspace.shouldPrepare) {
+      throw ExecutionError.invalidRequest(
+        'Supervisor mode requires workspace preparation (shouldPrepare)'
+      );
+    }
+
+    const initContext = workspace.initContext;
+    if (!initContext) {
+      throw ExecutionError.invalidRequest('Missing initContext for supervisor init');
+    }
+
+    let repoUrl: string;
+    try {
+      repoUrl = buildGitCloneUrl({
+        githubRepo: initContext.githubRepo,
+        githubToken: initContext.githubToken,
+        gitUrl: initContext.gitUrl,
+        gitToken: initContext.gitToken,
+      });
+    } catch (error) {
+      throw ExecutionError.invalidRequest(
+        `Missing git source in supervisor init: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+
+    const branchName = determineBranchName(sessionId, initContext.upstreamBranch);
+
+    // Build workspace and session home paths
+    const repoName = initContext.githubRepo ?? 'repo';
+    const workspacePath = `/home/${sessionId}/workspace/${repoName}`;
+    const sessionHome = `/home/${sessionId}`;
+
+    const payload: SupervisorInitPayload = {
+      agentSessionId: sessionId,
+      userId,
+      workspacePath,
+      sessionHome,
+      repo: {
+        url: repoUrl,
+        branch: branchName,
+        shallow: initContext.shallow,
+      },
+      setupCommands: initContext.setupCommands,
+      auth: initContext.kilocodeToken ? { kilocodeToken: initContext.kilocodeToken } : undefined,
+      sessionImport: wrapper.kiloSessionId ? { kiloSessionId: wrapper.kiloSessionId } : undefined,
+      env: initContext.envVars,
+    };
+
+    return payload;
   }
 
   // ---------------------------------------------------------------------------

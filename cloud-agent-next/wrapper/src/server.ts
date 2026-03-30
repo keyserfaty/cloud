@@ -4,6 +4,7 @@
  * Exposes the wrapper's HTTP API for the Worker to interact with:
  * - GET /health - Health check (includes sessionId)
  * - GET /job/status - Current job status
+ * - POST /job/init - Initialize supervisor (optional, only when onInit provided)
  * - POST /job/prompt - Send a prompt (includes execution binding)
  * - POST /job/command - Send a command (includes execution binding)
  * - POST /job/answer-permission - Answer a permission request
@@ -32,6 +33,10 @@ export type ServerConfig = {
   agentSessionId: string;
   /** Stable Cloud Agent user ID, passed at wrapper startup */
   userId: string;
+  /** If provided, a POST /job/init route is registered that calls this handler */
+  onInit?: (req: Request) => Promise<Response>;
+  /** Optional supervisor state getter for health endpoint */
+  getSupervisorState?: () => string;
 };
 
 export type ServerDependencies = {
@@ -225,7 +230,7 @@ function createHealthHandler(config: ServerConfig, state: WrapperState) {
   return (): Response => {
     return jsonResponse({
       healthy: true,
-      state: state.isActive ? 'active' : 'idle',
+      state: config.getSupervisorState?.() ?? (state.isActive ? 'active' : 'idle'),
       version: config.version,
       sessionId: config.sessionId,
     });
@@ -528,6 +533,10 @@ export function createServer(
       '/job/abort': abortHandler,
     },
   };
+
+  if (config.onInit) {
+    routes.POST['/job/init'] = config.onInit;
+  }
 
   const server = Bun.serve({
     port: config.port,

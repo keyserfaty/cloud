@@ -68,6 +68,9 @@ export class WrapperState {
   // Callbacks for sending events to ingest
   private _sendToIngestFn: ((event: IngestEvent) => void) | null = null;
 
+  /** Called when wrapper transitions idle → active. Set externally (e.g. by supervisor). */
+  onBecameActive: (() => void) | null = null;
+
   // Log uploader (set per-job, cleared on job end)
   private _logUploader: LogUploader | null = null;
 
@@ -139,6 +142,7 @@ export class WrapperState {
     this._isActive = active;
     if (active) {
       this.updateActivity();
+      this.onBecameActive?.();
     }
   }
 

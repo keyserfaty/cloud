@@ -252,6 +252,8 @@ export type InitContext = {
   /** Git platform type for correct token/env var handling */
   platform?: 'github' | 'gitlab';
   createdOnPlatform?: string;
+  /** Whether to perform a shallow clone (depth: 1) */
+  shallow?: boolean;
 };
 
 /**

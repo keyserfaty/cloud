@@ -90,6 +90,35 @@ export type JobStatus = {
 
 export type WrapperSessionCommandResponse = unknown;
 
+export type SupervisorInitPayload = {
+  agentSessionId: string;
+  userId: string;
+  workspacePath: string;
+  sessionHome: string;
+  repo: {
+    url: string;
+    branch?: string;
+    ref?: string;
+    shallow?: boolean;
+  };
+  setupCommands?: string[];
+  auth?: {
+    kilocodeToken: string;
+  };
+  sessionImport?: {
+    kiloSessionId: string;
+    snapshotUrl?: string;
+  };
+  env?: Record<string, string>;
+};
+
+export type SupervisorInitResponse = {
+  status: 'ready' | 'error';
+  kiloSessionId?: string;
+  step?: string;
+  message?: string;
+};
+
 // ---------------------------------------------------------------------------
 // Error Classes
 // ---------------------------------------------------------------------------
@@ -544,6 +573,50 @@ export class WrapperClient {
     }
 
     throw lastError ?? new WrapperNotReadyError('Failed to start wrapper after port retries');
+  }
+
+  /**
+   * Create a WrapperClient for a supervisor-mode sandbox.
+   * The supervisor wrapper always runs on port 5000, started by the container's CMD.
+   * No process scanning or startup needed — just connect.
+   */
+  static forSupervisor(session: ExecutionSession): WrapperClient {
+    return new WrapperClient({ session, port: 5000 });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Supervisor Lifecycle Methods
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Initialize a supervisor-mode wrapper. Sends the init payload and waits
+   * for workspace setup + kilo server startup inside the container.
+   * Only used for per-session sandboxes (supervisor mode).
+   */
+  async init(payload: SupervisorInitPayload): Promise<SupervisorInitResponse> {
+    return this.request<SupervisorInitResponse>('POST', '/job/init', payload);
+  }
+
+  /**
+   * Wait for the supervisor wrapper to become healthy.
+   * Used during supervisor mode initialization — the wrapper starts with the
+   * container CMD but needs a moment to bind its HTTP server.
+   */
+  async waitForHealthy(maxWaitMs = 30_000): Promise<WrapperHealthResponse> {
+    const deadline = Date.now() + maxWaitMs;
+    const retryDelay = 500;
+
+    while (Date.now() < deadline) {
+      try {
+        return await this.health();
+      } catch {
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
+
+    throw new WrapperNotReadyError(
+      `Supervisor wrapper did not become healthy within ${maxWaitMs}ms`
+    );
   }
 
   // ---------------------------------------------------------------------------

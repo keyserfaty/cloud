@@ -11,6 +11,7 @@ import {
   cloneGitHubRepo,
   cloneGitRepo,
   manageBranch,
+  buildGitCloneUrl,
 } from '../workspace.js';
 import {
   SessionService,
@@ -35,6 +36,95 @@ export type PreparationStepsResult = {
   resolvedInstallationId: string | undefined;
   resolvedGithubAppType: 'standard' | 'lite' | undefined;
 };
+
+/**
+ * Supervisor path: after token resolution and sandbox creation, delegate all
+ * workspace setup to the supervisor wrapper via /job/init.
+ */
+async function executeSupervisorInit(
+  sandboxId: SandboxId,
+  sandbox: ReturnType<typeof getSandbox>,
+  input: PreparationInput,
+  resolvedGithubToken: string | undefined,
+  emitProgress: EmitProgress,
+  resolved: {
+    resolvedInstallationId: string | undefined;
+    resolvedGithubAppType: 'standard' | 'lite' | undefined;
+  }
+): Promise<PreparationStepsResult | undefined> {
+  emitProgress('kilo_server', 'Initializing supervisor…');
+
+  const session = await sandbox.createSession();
+  const wrapperClient = WrapperClient.forSupervisor(session);
+
+  try {
+    await wrapperClient.waitForHealthy();
+  } catch (error) {
+    emitProgress(
+      'failed',
+      `Supervisor wrapper not healthy: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return undefined;
+  }
+
+  let repoUrl: string | undefined;
+  try {
+    repoUrl = buildGitCloneUrl({
+      githubRepo: input.githubRepo,
+      githubToken: resolvedGithubToken,
+      gitUrl: input.gitUrl,
+      gitToken: input.gitToken,
+    });
+  } catch {
+    emitProgress('failed', 'Missing git source for supervisor init');
+    return undefined;
+  }
+
+  const branchName = determineBranchName(input.sessionId, input.upstreamBranch);
+  const workspacePath = `/home/${input.sessionId}/workspace/${input.githubRepo ?? 'repo'}`;
+  const sessionHome = `/home/${input.sessionId}`;
+
+  try {
+    const initResponse = await wrapperClient.init({
+      agentSessionId: input.sessionId,
+      userId: input.userId,
+      workspacePath,
+      sessionHome,
+      repo: {
+        url: repoUrl,
+        branch: branchName,
+        shallow: input.shallow,
+      },
+      setupCommands: input.setupCommands,
+      auth: input.authToken ? { kilocodeToken: input.authToken } : undefined,
+      sessionImport: input.kiloSessionId ? { kiloSessionId: input.kiloSessionId } : undefined,
+      env: input.envVars,
+    });
+
+    if (initResponse.status !== 'ready' || !initResponse.kiloSessionId) {
+      emitProgress('failed', `Supervisor init failed: ${initResponse.message ?? 'unknown error'}`);
+      return undefined;
+    }
+
+    emitProgress('ready', 'Supervisor ready');
+
+    return {
+      sandboxId,
+      workspacePath,
+      sessionHome,
+      branchName,
+      kiloSessionId: initResponse.kiloSessionId,
+      resolvedInstallationId: resolved.resolvedInstallationId,
+      resolvedGithubAppType: resolved.resolvedGithubAppType,
+    };
+  } catch (error) {
+    emitProgress(
+      'failed',
+      `Supervisor init error: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return undefined;
+  }
+}
 
 /**
  * Execute all expensive workspace preparation steps (token resolution, disk
@@ -95,6 +185,21 @@ export async function executePreparationSteps(
     sleepAfter: SANDBOX_SLEEP_AFTER_SECONDS,
   });
   await checkDiskAndCleanBeforeSetup(sandbox, input.orgId, input.userId, input.sessionId);
+
+  // Supervisor path: sandbox CMD handles workspace setup + kilo startup
+  if (sandboxId.startsWith('ses-')) {
+    return await executeSupervisorInit(
+      sandboxId,
+      sandbox,
+      input,
+      resolvedGithubToken,
+      emitProgress,
+      {
+        resolvedInstallationId,
+        resolvedGithubAppType,
+      }
+    );
+  }
 
   // 3. Workspace setup
   emitProgress('workspace_setup', 'Setting up workspace…');

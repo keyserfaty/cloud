@@ -56,6 +56,10 @@ export type LifecycleDependencies = {
   isConnected: () => boolean;
   /** Abort and restart the SDK event subscription */
   reconnectEventSubscription: () => void;
+  /** Supervisor mode: keep ingest WS + SSE alive between turns */
+  keepConnectionsAlive?: boolean;
+  /** Called after turn drain completes (post-completion + log upload + complete event sent) */
+  onDrainComplete?: () => void;
 };
 
 export type LifecycleManager = {
@@ -286,19 +290,27 @@ export function createLifecycleManager(
           logToFile('skipping complete event — execution was aborted');
         }
 
-        // 4. Drain delay, then close connections
-        drainTimeout = setTimeout(() => {
-          logToFile('drain complete, closing connections');
-          deps
-            .closeConnections()
-            .catch(err =>
-              logToFile(`close failed: ${err instanceof Error ? err.message : String(err)}`)
-            )
-            .finally(() => {
-              isDraining = false;
-              drainTimeout = null;
-            });
-        }, DRAIN_DELAY_MS);
+        // 4. Drain delay, then close connections (or just signal completion in supervisor mode)
+        if (deps.keepConnectionsAlive) {
+          // Supervisor mode: keep connections open, signal drain complete
+          isDraining = false;
+          if (state.isIdle) {
+            deps.onDrainComplete?.();
+          }
+        } else {
+          drainTimeout = setTimeout(() => {
+            logToFile('drain complete, closing connections');
+            deps
+              .closeConnections()
+              .catch(err =>
+                logToFile(`close failed: ${err instanceof Error ? err.message : String(err)}`)
+              )
+              .finally(() => {
+                isDraining = false;
+                drainTimeout = null;
+              });
+          }, DRAIN_DELAY_MS);
+        }
       }
     })();
   }
