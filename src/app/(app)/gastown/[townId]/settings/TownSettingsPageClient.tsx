@@ -29,6 +29,7 @@ import {
   Container,
   User,
   Key,
+  MessageSquareText,
   X,
 } from 'lucide-react';
 import {
@@ -38,6 +39,7 @@ import {
   AccordionContent,
 } from '@/components/ui/accordion';
 import { Slider } from '@/components/ui/slider';
+import { Textarea } from '@/components/ui/textarea';
 import { motion } from 'motion/react';
 import { AdminViewingBanner } from '@/components/gastown/AdminViewingBanner';
 import { useRouter } from 'next/navigation';
@@ -69,6 +71,7 @@ const SECTIONS = [
   { id: 'merge-strategy', label: 'Merge Strategy', icon: GitPullRequest },
   { id: 'refinery', label: 'Refinery', icon: Shield },
   { id: 'container', label: 'Container', icon: Container },
+  { id: 'custom-instructions', label: 'Custom Instructions', icon: MessageSquareText },
   { id: 'danger-zone', label: 'Danger Zone', icon: Trash2 },
 ] as const;
 
@@ -256,6 +259,9 @@ export function TownSettingsPageClient({ townId, readOnly = false, organizationI
   const [gitAuthorName, setGitAuthorName] = useState('');
   const [gitAuthorEmail, setGitAuthorEmail] = useState('');
   const [disableAiCoauthor, setDisableAiCoauthor] = useState(false);
+  const [polecatInstructions, setPolecatInstructions] = useState('');
+  const [refineryInstructions, setRefineryInstructions] = useState('');
+  const [mayorInstructions, setMayorInstructions] = useState('');
   const [initialized, setInitialized] = useState(false);
   const [showTokens, setShowTokens] = useState(false);
 
@@ -285,6 +291,9 @@ export function TownSettingsPageClient({ townId, readOnly = false, organizationI
     setGitAuthorName(cfg.git_author_name ?? '');
     setGitAuthorEmail(cfg.git_author_email ?? '');
     setDisableAiCoauthor(cfg.disable_ai_coauthor ?? false);
+    setPolecatInstructions(cfg.custom_instructions?.polecat ?? '');
+    setRefineryInstructions(cfg.custom_instructions?.refinery ?? '');
+    setMayorInstructions(cfg.custom_instructions?.mayor ?? '');
     setInitialized(true);
   }
 
@@ -329,6 +338,11 @@ export function TownSettingsPageClient({ townId, readOnly = false, organizationI
           gates: refineryGates.filter(g => g.trim()),
           auto_merge: autoMerge,
           require_clean_merge: true,
+        },
+        custom_instructions: {
+          polecat: polecatInstructions || undefined,
+          refinery: refineryInstructions || undefined,
+          mayor: mayorInstructions || undefined,
         },
       },
     });
@@ -829,13 +843,47 @@ export function TownSettingsPageClient({ townId, readOnly = false, organizationI
                 </div>
               </SettingsSection>
 
+              {/* ── Custom Instructions ────────────────────────────────── */}
+              <SettingsSection
+                id="custom-instructions"
+                title="Custom Instructions"
+                description="Customize the system prompt for each agent role. These instructions are appended to the default prompt and apply to all agents of that role."
+                icon={MessageSquareText}
+                index={9}
+              >
+                <div className="space-y-5">
+                  {(
+                    [
+                      ['Polecat Instructions', polecatInstructions, setPolecatInstructions],
+                      ['Refinery Instructions', refineryInstructions, setRefineryInstructions],
+                      ['Mayor Instructions', mayorInstructions, setMayorInstructions],
+                    ] as const
+                  ).map(([roleLabel, value, setValue]) => (
+                    <FieldGroup key={roleLabel} label={roleLabel}>
+                      <div className="relative">
+                        <Textarea
+                          value={value}
+                          onChange={e => setValue(e.target.value.slice(0, 2000))}
+                          placeholder={`Custom instructions for ${roleLabel.replace(' Instructions', '').toLowerCase()} agents…`}
+                          rows={4}
+                          className="border-white/[0.08] bg-white/[0.03] text-sm text-white/85 placeholder:text-white/20"
+                        />
+                        <span className="absolute right-2 bottom-2 text-[10px] text-white/20">
+                          {value.length} / 2000
+                        </span>
+                      </div>
+                    </FieldGroup>
+                  ))}
+                </div>
+              </SettingsSection>
+
               {/* ── Danger Zone ──────────────────────────────────────── */}
               <SettingsSection
                 id="danger-zone"
                 title="Danger Zone"
                 description="Irreversible actions for this town."
                 icon={Trash2}
-                index={9}
+                index={10}
               >
                 <div className="space-y-3">
                   <div className="flex items-center justify-between rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3">

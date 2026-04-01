@@ -1003,6 +1003,18 @@ export const gastownRouter = router({
         }
       }
 
+      // Rewrite the mayor's AGENTS.md when custom instructions change so the
+      // running mayor picks them up on its next session restart.
+      const mayorInstructionsChanged =
+        result.custom_instructions?.mayor !== existingConfig.custom_instructions?.mayor;
+      if (mayorInstructionsChanged) {
+        try {
+          await townStub.updateMayorSystemPrompt();
+        } catch (err) {
+          console.warn('[gastown-trpc] updateTownConfig: updateMayorSystemPrompt failed:', err);
+        }
+      }
+
       return result;
     }),
 
