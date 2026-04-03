@@ -1,6 +1,6 @@
 {
-  "id": "08a38521-74f8-41df-bc95-60ae7e436a8f",
-  "prevId": "692f8c28-6cf9-4d92-bc8c-bbcc5bb71d3f",
+  "id": "d9690cb5-dcb2-491b-9c2a-a675ee0231bc",
+  "prevId": "d96bf1bd-afa1-421a-afb2-d9b7fe1aab42",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3970,6 +3970,26 @@
           "primaryKey": false,
           "notNull": false
         },
+        "activation_mode": {
+          "name": "activation_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'webhook'"
+        },
+        "cron_expression": {
+          "name": "cron_expression",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cron_timezone": {
+          "name": "cron_timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'UTC'"
+        },
         "github_repo": {
           "name": "github_repo",
           "type": "text",
@@ -4179,6 +4199,10 @@
         "CHK_cloud_agent_webhook_triggers_kiloclaw_fields": {
           "name": "CHK_cloud_agent_webhook_triggers_kiloclaw_fields",
           "value": "(\n        \"cloud_agent_webhook_triggers\".\"target_type\" != 'kiloclaw_chat' OR\n        \"cloud_agent_webhook_triggers\".\"kiloclaw_instance_id\" IS NOT NULL\n      )"
+        },
+        "CHK_cloud_agent_webhook_triggers_scheduled_fields": {
+          "name": "CHK_cloud_agent_webhook_triggers_scheduled_fields",
+          "value": "(\n        \"cloud_agent_webhook_triggers\".\"activation_mode\" != 'scheduled' OR\n        \"cloud_agent_webhook_triggers\".\"cron_expression\" IS NOT NULL\n      )"
         }
       },
       "isRLSEnabled": false
@@ -4519,8 +4543,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-<<<<<<< HEAD
-=======
     "public.contributor_champion_contributors": {
       "name": "contributor_champion_contributors",
       "schema": "",
@@ -4958,7 +4980,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
->>>>>>> f1326dacc (feat(contributors): add pagination, sorting, filtering, credits system)
     "public.credit_transactions": {
       "name": "credit_transactions",
       "schema": "",
@@ -14208,7 +14229,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-<<<<<<< HEAD
     "public.user_affiliate_attributions": {
       "name": "user_affiliate_attributions",
       "schema": "",
@@ -14298,8 +14318,6 @@
       },
       "isRLSEnabled": false
     },
-=======
->>>>>>> f1326dacc (feat(contributors): add pagination, sorting, filtering, credits system)
     "public.user_auth_provider": {
       "name": "user_auth_provider",
       "schema": "",
