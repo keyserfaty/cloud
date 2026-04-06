@@ -36,6 +36,7 @@ import { adminCustomLlmRouter } from '@/routers/admin/custom-llm-router';
 import { adminWebhookTriggersRouter } from '@/routers/admin-webhook-triggers-router';
 import { adminAlertingRouter } from '@/routers/admin-alerting-router';
 import { adminBotRequestsRouter } from '@/routers/admin-bot-requests-router';
+import { adminFreeModelUsageRouter } from '@/routers/admin/free-model-usage-router';
 import { workerInstanceId } from '@/lib/kiloclaw/instance-registry';
 import * as z from 'zod';
 import { eq, and, ne, or, ilike, desc, asc, sql, isNull, inArray } from 'drizzle-orm';
@@ -1360,4 +1361,5 @@ export const adminRouter = createTRPCRouter({
   gastown: adminGastownRouter,
   extendClawTrial: extendClawTrialRouter,
   customLlm: adminCustomLlmRouter,
+  freeModelUsage: adminFreeModelUsageRouter,
 });
