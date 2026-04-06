@@ -25,7 +25,9 @@ import {
   Webhook,
   Factory,
   Settings,
-  MessageSquare,
+  Sparkles,
+  CreditCard,
+  Server,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import HeaderLogo from '@/components/HeaderLogo';
@@ -77,14 +79,24 @@ export default function PersonalAppSidebar(props: React.ComponentProps<typeof Si
     className?: string;
   }> = [
     {
-      title: 'KiloClaw',
+      title: 'Chat',
       icon: KiloCrabIcon,
-      url: '/claw',
+      url: '/claw/chat',
     },
     {
-      title: 'Chat',
-      icon: MessageSquare,
-      url: '/claw/chat',
+      title: 'Gateway',
+      icon: Server,
+      url: '/claw/gateway',
+    },
+    {
+      title: 'Subscription',
+      icon: CreditCard,
+      url: '/claw/subscription',
+    },
+    {
+      title: "What's New",
+      icon: Sparkles,
+      url: '/claw/changelog',
     },
     {
       title: 'Settings',
