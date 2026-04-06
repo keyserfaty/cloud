@@ -33,6 +33,15 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 echo "$PORT" > "$REPO_ROOT/.dev-port"
 echo "Dev server starting on port $PORT (written to $REPO_ROOT/.dev-port)"
 
+# Next.js loads .env* files from CWD. When running from apps/web/, symlink
+# the repo-root env files so env vars are available without duplication.
+for envfile in .env.local .env.development.local; do
+  if [ -f "$REPO_ROOT/$envfile" ] && [ ! -f "$envfile" ]; then
+    ln -s "$REPO_ROOT/$envfile" "$envfile"
+    echo "Symlinked $REPO_ROOT/$envfile → $(pwd)/$envfile"
+  fi
+done
+
 export PORT
 export NEXTAUTH_URL="${NEXTAUTH_URL:-${APP_URL_OVERRIDE:-http://localhost:$PORT}}"
 exec npx next dev -p "$PORT" "$@"
