@@ -149,6 +149,8 @@ export async function buildUserEnvVars(
       execAsk: state.execAsk ?? undefined,
       orgId: state.orgId,
       customSecretMeta: state.customSecretMeta ?? undefined,
+      vectorMemoryEnabled: state.vectorMemoryEnabled,
+      vectorMemoryModel: state.vectorMemoryModel ?? undefined,
     }
   );
 

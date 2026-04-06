@@ -49,6 +49,8 @@ const KiloCodeConfigPatchSchema = z.object({
     )
     .nullable()
     .optional(),
+  vectorMemoryEnabled: z.boolean().optional(),
+  vectorMemoryModel: z.string().nullable().optional(),
 });
 
 const platform = new Hono<AppEnv>();
@@ -382,7 +384,14 @@ platform.patch('/kilocode-config', async c => {
   const iidResult = parseInstanceIdQuery(c);
   if ('error' in iidResult) return iidResult.error;
 
-  const { userId, kilocodeApiKey, kilocodeApiKeyExpiresAt, kilocodeDefaultModel } = result.data;
+  const {
+    userId,
+    kilocodeApiKey,
+    kilocodeApiKeyExpiresAt,
+    kilocodeDefaultModel,
+    vectorMemoryEnabled,
+    vectorMemoryModel,
+  } = result.data;
 
   try {
     const updated = await withDORetry(
@@ -392,6 +401,8 @@ platform.patch('/kilocode-config', async c => {
           kilocodeApiKey,
           kilocodeApiKeyExpiresAt,
           kilocodeDefaultModel,
+          vectorMemoryEnabled,
+          vectorMemoryModel,
         }),
       'updateKiloCodeConfig'
     );
