@@ -33,7 +33,7 @@ describe('getEmbeddingProvider', () => {
     const user = createTestUser();
 
     for (const model of [
-      'mistralai/mistral-embed',
+      'mistralai/mistral-embed-2312',
       'openai/text-embedding-3-small',
       'google/text-embedding-004',
     ]) {
@@ -65,7 +65,7 @@ describe('getEmbeddingProvider', () => {
     mockedGetModelUserByokProviders.mockResolvedValue(['mistral']);
     mockedGetBYOKforOrganization.mockResolvedValue(mockByokResult);
 
-    const result = await getEmbeddingProvider('mistralai/mistral-embed', user, 'org-123');
+    const result = await getEmbeddingProvider('mistralai/mistral-embed-2312', user, 'org-123');
 
     expect(result.provider.id).toBe('vercel');
     expect(result.userByok).toBe(mockByokResult);
