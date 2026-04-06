@@ -151,6 +151,7 @@ export async function buildUserEnvVars(
       customSecretMeta: state.customSecretMeta ?? undefined,
       vectorMemoryEnabled: state.vectorMemoryEnabled,
       vectorMemoryModel: state.vectorMemoryModel ?? undefined,
+      dreamingEnabled: state.dreamingEnabled,
     }
   );
 
