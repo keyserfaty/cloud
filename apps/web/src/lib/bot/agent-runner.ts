@@ -25,6 +25,9 @@ import {
   getGitLabRepositoryContext,
 } from '@/lib/slack-bot/gitlab-repository-context';
 import { isFreeModel } from '@/lib/ai-gateway/is-free-model';
+import { isAgentcardEnabled } from '@/lib/agentcard/config';
+import { buildAgentcardTools } from '@/lib/agentcard/tools';
+import { buildConnectUrl, isConnected } from '@/lib/agentcard/runtime';
 import { generateApiToken } from '@/lib/tokens';
 import { captureException } from '@sentry/nextjs';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
@@ -246,16 +249,32 @@ export async function runBotAgent(params: RunBotAgentParams): Promise<BotAgentCo
     };
   }
 
+  // Agentcard: expose curated virtual-card tools when the user has connected
+  // their Agentcard account; otherwise tell the model how to hand off the
+  // "Connect with Agentcard" link. Keyed by the stable Kilo user id.
+  const agentcardUserId = params.user.id;
+  const agentcardConnected =
+    isAgentcardEnabled() && (await isConnected(agentcardUserId).catch(() => false));
+  const agentcardTools = agentcardConnected ? buildAgentcardTools(agentcardUserId) : {};
+
+  let instructions = await buildSystemPrompt(
+    botPlatform,
+    params.platformIntegration,
+    params.thread,
+    params.message
+  );
+  if (isAgentcardEnabled()) {
+    instructions += agentcardConnected
+      ? `\n\n## Agentcard virtual cards\nThe user has connected Agentcard. You can issue and manage virtual cards via the agentcard_* tools. When the user asks for a card, call agentcard_create_card immediately — do not ask for confirmation first. Never echo full card numbers (PAN) or CVV in plain text beyond what is necessary to fulfill the request.`
+      : `\n\n## Agentcard virtual cards\nThe user has NOT connected Agentcard. If they ask about virtual cards, share this one-time link so they can connect, then they can ask again: ${buildConnectUrl(agentcardUserId)}`;
+  }
+
   const agent = new ToolLoopAgent({
     model: provider.chatModel(modelSlug),
-    instructions: await buildSystemPrompt(
-      botPlatform,
-      params.platformIntegration,
-      params.thread,
-      params.message
-    ),
+    instructions,
     stopWhen: stepCountIs(remainingIterations),
     tools: {
+      ...agentcardTools,
       spawnCloudAgentSession: tool({
         description: `Spawn a Cloud Agent session to perform coding tasks on a GitHub repository or GitLab project. The agent can make code changes, fix bugs, implement features, review/analyze code, run tests, or open PRs/MRs. Do NOT use it for questions you can answer directly.
 

@@ -45,6 +45,15 @@ export const abuseRulesClassificationRedisKey = (identityKey: string) =>
 export const botIdentityRedisKey = (platform: string, teamId: string, userId: string) =>
   redisKey(`identity:${platform}:${teamId}:${userId}`);
 
+/** Cached Agentcard OAuth client_id obtained via Dynamic Client Registration. */
+export const AGENTCARD_CLIENT_ID_REDIS_KEY = redisKey('agentcard:client-id');
+
+/** Per-user Agentcard token bundle (encrypted at rest), keyed by Kilo user id. */
+export const agentcardTokenRedisKey = (userId: string) => redisKey(`agentcard:token:${userId}`);
+
+/** Short-lived Agentcard OAuth state -> { userId, codeVerifier, clientId }. */
+export const agentcardStateRedisKey = (state: string) => redisKey(`agentcard:state:${state}`);
+
 /**
  * Set of public_model_ids that have a routing-relevant model_experiment row
  * (status IN 'active' | 'paused'). Used by `getProvider` as a fast pre-check
